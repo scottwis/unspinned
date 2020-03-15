@@ -11,12 +11,40 @@ import (
 	"time"
 )
 
-const epsilon theSkyX.Degrees = 0.001
+const (
+	defaultStepSize theSkyX.Degrees = 0.001
+	defaultHost = "localhost"
+	defaultPort = "3040"
+	defaultTrackingRate = "sidereal"
+)
+
+var trackingRates = map[string]theSkyX.Radians{
+	"sidereal": theSkyX.Radians(0.00007292115),
+	"lunar":    theSkyX.Radians(0.0000711948891),
+	"solar":    theSkyX.Radians(0.0000727221),
+}
 
 type cmdValues struct {
 	trackingRate string
 	host string
 	port string
+	stepSize string
+}
+
+func formatTrackingRates() string {
+	var b strings.Builder
+
+	first := true
+	for key := range trackingRates {
+		if ! first {
+			b.Write([]byte(", "))
+		} else {
+			first = false
+		}
+		_, _ = fmt.Fprintf(&b, "'%v'", key)
+	}
+
+	return b.String()
 }
 
 func main() {
@@ -26,30 +54,50 @@ func main() {
 		&values.trackingRate,
 		"rate",
 		"",
-		"The tracking rate to use. Defaults to 'sidereal'. You should use 'sidereal' for most objects. Valid values are 'sidereal', 'lunar', 'solar', or a custom value. For custom values, enter a floating point value in radians / second.",
+		fmt.Sprintf(
+			"The tracking rate to use. Defaults to '%[1]v'. You should use '%[1]v' for most objects. Valid values are %[2]v, or a custom floating point value in radians / second.",
+			defaultTrackingRate,
+			formatTrackingRates(),
+		),
 	)
 
 	flag.StringVar(
-		&values.trackingRate,
+		&values.host,
 		"host",
 		"",
-		"The host running TSX to connect to. Defaults to 'localhost'.",
+		fmt.Sprintf("The host running TSX to connect to. Defaults to '%v'.", defaultHost),
 	)
 
-	flag.StringVar(&values.port, "port", "", "The port to connect to. Defaults to '3040'.")
+	flag.StringVar(
+		&values.port,
+		"port",
+		"",
+		fmt.Sprintf("The port to connect to. Defaults to '%v'.", defaultPort),
+	)
+
+	flag.StringVar(
+		&values.stepSize,
+		"stepSize",
+		"",
+		fmt.Sprintf("The rotator step size in degrees. Defaults to '%v'", defaultStepSize),
+	)
 
 	flag.Parse()
 
 	if values.host == "" {
-		values.host = "localhost"
+		values.host = defaultHost
 	}
 
 	if values.port == "" {
-		values.port = "3040"
+		values.port = defaultPort
 	}
 
 	if values.trackingRate == "" {
-		values.trackingRate = "sidereal"
+		values.trackingRate = defaultTrackingRate
+	}
+
+	if values.stepSize == "" {
+		values.stepSize = string(float64(defaultStepSize))
 	}
 
 	tsx, err := theSkyX.New(values.host, values.port)
@@ -68,7 +116,13 @@ func main() {
 	trackingRate, err := computeTrackingRate(values.trackingRate)
 
 	if err != nil {
-		fmt.Printf("invalid tracking rate: %v\n", err)
+		fmt.Println(err)
+		os.Exit(-1)
+	}
+
+	stepSize, err := strconv.ParseFloat(values.stepSize, 64)
+	if err != nil {
+		fmt.Printf("Invalid step size: %v\n", values.stepSize)
 		os.Exit(-1)
 	}
 
@@ -92,9 +146,9 @@ func main() {
 
 		totalAngularDelta += newDelta
 
-		if math.Abs(float64(totalAngularDelta - comunicatedDelta)) > float64(epsilon) {
+		if math.Abs(float64(totalAngularDelta - comunicatedDelta)) > stepSize {
 			deltaToComunicate := (totalAngularDelta - comunicatedDelta) -
-				theSkyX.Degrees(math.Mod(float64(totalAngularDelta - comunicatedDelta), float64(epsilon)))
+				theSkyX.Degrees(math.Mod(float64(totalAngularDelta - comunicatedDelta), stepSize))
 
 			state, err = tsx.Rotate(state.RotatorAngle + deltaToComunicate)
 
@@ -120,18 +174,13 @@ func main() {
 }
 
 func computeTrackingRate(rate string) (theSkyX.Radians, error) {
-	switch rate {
-	case "sidereal":
-		return theSkyX.Radians(0.00007292115), nil
-	case "lunar":
-		return theSkyX.Radians(0.0000711948891), nil
-	case "solar":
-		return theSkyX.Radians(0.0000727221), nil
-	default:
-		rate, err := strconv.ParseFloat(rate, 64)
+	ret, ok := trackingRates[rate]
+	if ! ok {
+		f, err := strconv.ParseFloat(rate, 64)
 		if err != nil {
-			return 0.0, err
+			return 0.0, fmt.Errorf("invalid tracking rate '%v'", rate)
 		}
-		return theSkyX.Radians(rate), err
+		return theSkyX.Radians(f), nil
 	}
+	return ret, nil
 }
