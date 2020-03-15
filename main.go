@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	defaultStepSize theSkyX.Degrees = 0.001
+	defaultStepSize = "0.001"
 	defaultHost = "localhost"
 	defaultPort = "3040"
 	defaultTrackingRate = "sidereal"
@@ -97,7 +97,7 @@ func main() {
 	}
 
 	if values.stepSize == "" {
-		values.stepSize = string(float64(defaultStepSize))
+		values.stepSize = defaultStepSize
 	}
 
 	tsx, err := theSkyX.New(values.host, values.port)
@@ -160,11 +160,13 @@ func main() {
 			} else {
 				comunicatedDelta += deltaToComunicate
 				fmt.Printf(
-					"rotated %v degress (%v total), rotation rate = %v deg/sec, trackingRate = %v, current == %v\n",
+					"rotated %v degress (%v total), rotation rate = %v deg/sec, trackingRate = %v, current == %v, alt=%v, az=%v\n",
 					deltaToComunicate,
 					comunicatedDelta,
 					rotationRate.ToDegrees(),
 					values.trackingRate, state.RotatorAngle,
+					state.PointingAt.Alt,
+					state.PointingAt.Az,
 				)
 			}
 		}
